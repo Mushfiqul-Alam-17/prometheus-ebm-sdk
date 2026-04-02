@@ -302,6 +302,6 @@ MIT — See [LICENSE](LICENSE) for details.
   title   = {PROMETHEUS-EBM: Benchmarking Epistemic Metacognition in Frontier AI Models},
   author  = {Mushfiqul Alam},
   year    = {2026},
-  url     = {https://github.com/mushfiqulalam007/prometheus-ebm-sdk}
+  url     = {https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk}
 }
 ```

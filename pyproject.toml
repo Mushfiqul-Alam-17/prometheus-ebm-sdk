@@ -34,8 +34,8 @@ openai = ["openai>=1.0"]
 all = ["anthropic>=0.25", "openai>=1.0"]
 
 [project.urls]
-Homepage = "https://github.com/mushfiqulalam007/prometheus-ebm-sdk"
-Repository = "https://github.com/mushfiqulalam007/prometheus-ebm-sdk"
+Homepage = "https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk"
+Repository = "https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk"
 
 [tool.setuptools.packages.find]
 include = ["prometheus_ebm*"]

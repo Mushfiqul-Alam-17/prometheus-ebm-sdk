@@ -24,7 +24,7 @@ Quick Start:
     scorer = ECIScorer()
     eci = scorer.compute_eci(sda=0.85, ca=0.80, rp=0.75, ece=0.15, hss=0.10)
 
-Full documentation: https://github.com/mushfiqulalam007/prometheus-ebm-sdk
+Full documentation: https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk
 """
 
 __version__ = "0.1.0"

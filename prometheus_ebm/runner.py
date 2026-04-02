@@ -79,7 +79,7 @@ class PrometheusRunner:
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"Dataset not found: {path}\n"
-                f"Download from: https://github.com/mushfiqulalam007/prometheus-ebm-sdk"
+                f"Download from: https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk"
             )
         
         with open(path, 'r', encoding='utf-8') as f:
