@@ -99,7 +99,7 @@ class RunConfig:
     def summary(self) -> str:
         """Human-readable configuration summary."""
         lines = [
-            f"═══ PROMETHEUS-EBM Configuration ═══",
+            f"=== PROMETHEUS-EBM Configuration ===",
             f"  Mode: {self.mode}",
             f"  Models: {', '.join(self.models)}",
             f"  Provider: {self.provider}",
