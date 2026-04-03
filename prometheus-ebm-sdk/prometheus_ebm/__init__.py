@@ -27,12 +27,16 @@ Quick Start:
 Full documentation: https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.1"
 
 from prometheus_ebm.config import RunConfig
 from prometheus_ebm.scorer import ECIScorer, BrierDecomposition, Type2DPrime, ScoringResult
 from prometheus_ebm.taxonomy import SolvabilityClass, BENCHMARK_DOMAINS
 from prometheus_ebm.runner import PrometheusRunner, BenchmarkResults
+from prometheus_ebm.providers.openai import OpenAIProvider
+from prometheus_ebm.providers.openrouter import OpenRouterProvider
+from prometheus_ebm.providers.anthropic import AnthropicProvider
+from prometheus_ebm.providers.kaggle import KaggleProvider
 
 __all__ = [
     "RunConfig",
@@ -44,4 +48,8 @@ __all__ = [
     "ScoringResult",
     "SolvabilityClass",
     "BENCHMARK_DOMAINS",
+    "OpenAIProvider",
+    "OpenRouterProvider",
+    "AnthropicProvider",
+    "KaggleProvider",
 ]

@@ -8,7 +8,7 @@
 
 PROMETHEUS-EBM evaluates whether frontier AI models can recognize the *limits of their own knowledge* — not just answer questions, but understand when a question is unanswerable, ambiguous, or self-contradictory.
 
-> **Companion to the Kaggle notebook:** [PROMETHEUS-EBM v5.0](https://www.kaggle.com/code/mushfiqulalam007/final-bm-v4) — The full benchmark with live results from 5 frontier models.
+> **Companion to the V5 notebook protocol:** This SDK now mirrors the `Final_V5.ipynb` artifact contract for standalone, reproducible lab runs.
 
 ---
 
@@ -78,7 +78,7 @@ pip install "prometheus-ebm[all]"         # All providers
 from prometheus_ebm import PrometheusRunner, RunConfig
 
 config = RunConfig(
-    mode="compare",
+    mode="extended",
     models=[
         "anthropic/claude-opus-4-6@default",
         "anthropic/claude-sonnet-4-6@default",
@@ -94,7 +94,7 @@ config = RunConfig(
 
 runner = PrometheusRunner(config)
 results = runner.run()
-results.export("comparison.csv")
+results.export("prometheus_sdk_v5_bundle.zip")
 ```
 
 ### Deep Probe a Single Model (1,000 Items)
@@ -134,9 +134,39 @@ config = RunConfig(
     models=["gpt-5.4"],
     provider="openai",
     api_key="sk-...",
-    n_items=200,
+    n_items=1000,
 )
 ```
+
+### Test with Groq (OpenAI-Compatible)
+
+The OpenAI adapter supports custom endpoints, so you can route calls to Groq.
+
+```python
+import os
+from prometheus_ebm import OpenAIProvider, PrometheusRunner, RunConfig
+
+api_key = os.getenv("OPENAI_API_KEY")
+provider = OpenAIProvider(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+
+config = RunConfig(
+    mode="standard",
+    models=["llama-3.1-70b-versatile"],
+    provider="openai",
+    api_key=api_key,
+    api_base_url="https://api.groq.com/openai/v1",
+    n_items=10,
+    run_probes=True,
+    run_multistage=False,
+    run_statistics=True,
+)
+
+runner = PrometheusRunner(config=config, provider=provider)
+results = runner.run_all()  # alias of run()
+results.export("zip")
+```
+
+See `examples/test_groq.py` for a complete runnable example.
 
 ### Using Custom Datasets
 
@@ -201,7 +231,7 @@ dprime = Type2DPrime.compute(confidences, correctness, threshold=0.7)
 ```python
 RunConfig(
     # ── Mode ──
-    mode="compare",           # "compare" (multi-model) or "deep_probe" (single-model)
+    mode="standard",          # "standard", "extended", "deep_probe" ("compare" alias is still supported)
     models=[...],             # List of model identifiers
 
     # ── Provider ──
@@ -216,8 +246,11 @@ RunConfig(
     stress_clarity_ratio=0.10,   # Fraction with reduced-clarity variants
 
     # ── Statistical ──
-    seeds=["s1", "s2"],       # Reproducibility seeds for bootstrap
-    bootstrap_iterations=2000, # Bootstrap iterations for CIs
+    seeds=["s1", "s2", "s3"],    # Epoch-1 resampling seeds
+    probe_seeds=["p1", "p2", "p3"], # Epoch-2 resampling seeds
+    bootstrap_iterations=3000,    # Bootstrap iterations for CIs
+    pairwise_permutation_rounds=1000,
+    multistage_sample_n=10,       # STANDARD/DEEP_PROBE default; EXTENDED uses 12
 
     # ── Time Budget ──
     timeout_per_model=10800,  # Max seconds per model (default: 3h)
@@ -235,8 +268,46 @@ RunConfig(
     run_probes=True,          # Epoch-2 adversarial probes
     run_multistage=True,      # Multi-stage belief revision protocol
     run_statistics=True,      # Bootstrap CIs and significance tests
+    run_research_grade_blocks=True,
+    run_independent_judge_sensitivity=False, # Optional (API-costly) criterion
     verbose=True,             # Print progress
 )
+```
+
+---
+
+## V5 Parity and Standalone Labs
+
+The SDK export pipeline now writes the same research-grade families used in `Final_V5.ipynb`, including:
+
+- Epoch-1 bundle artifacts (`prometheus_item_level_results.*`, `prometheus_model_comparison.*`, `prometheus_results_export.zip`)
+- Epoch-2 probe and multi-stage artifacts (`probe_results.csv`, `multistage_results.csv`, `prometheus_epoch2_export.zip`)
+- RG artifacts (`rg_epoch1_*`, `rg_epoch2_*`, contamination audit, judge sensitivity report)
+- Final gate/card artifacts (`research_grade_v1_gate.json`, `research_grade_v1_gate_criteria.csv`, `benchmark_card_research_grade_v1.md`)
+- Master archive (`prometheus_FINAL_submission.zip`) included inside the exported zip
+
+Minimal standalone flow for independent labs:
+
+```python
+from prometheus_ebm import PrometheusRunner, RunConfig
+
+config = RunConfig(
+    mode="extended",
+    models=[
+        "google/gemini-3.1-pro-preview",
+        "anthropic/claude-opus-4-6@default",
+        "anthropic/claude-sonnet-4-6@default",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek-ai/deepseek-r1-0528",
+    ],
+    provider="kaggle",
+    run_multistage=True,
+    run_research_grade_blocks=True,
+)
+
+runner = PrometheusRunner(config)
+results = runner.run()
+results.export("prometheus_sdk_v5_bundle.zip")
 ```
 
 ---
@@ -277,7 +348,8 @@ prometheus-ebm-sdk/
 │   ├── taxonomy.py          # 4-class solvability taxonomy
 │   ├── scorer.py            # ECI, HGI, Brier, D-Prime
 │   ├── runner.py            # Benchmark orchestrator
-│   ├── data/                # Bundled dataset (200 problems)
+│   ├── research_grade.py    # RG02-RG07 artifact pipeline
+│   ├── data/                # Bundled defaults (200, 1000, probe files)
 │   └── providers/
 │       ├── kaggle.py        # Kaggle kbench adapter
 │       ├── openrouter.py    # OpenRouter API adapter
@@ -298,10 +370,11 @@ prometheus-ebm-sdk/
 
 | Version | Status | Features |
 |---------|--------|----------|
-| **v0.1.0** | ✅ Current | Scorer (ECI, Brier, D-Prime), Taxonomy, Config, Provider adapters |
-| **v0.2.0** | Planned | Full evaluation loop, stress augmentation engine, export pipeline |
-| **v0.3.0** | Planned | Bootstrap CI, pairwise significance, contamination audit |
-| **v1.0.0** | Planned | 1,000-item dataset, CLI tool, HTML report generator |
+| **v0.1.0** | ✅ Shipped | Scorer (ECI, Brier, D-Prime), Taxonomy, Config, Provider adapters |
+| **v0.2.0** | ✅ Shipped | Full evaluation loop, stress augmentation engine, core export pipeline |
+| **v0.3.0** | ✅ Shipped | V5 parity exports: RG artifacts, contamination audit, gate/card bundle |
+| **v0.3.1** | ✅ Shipped | Lab usability patch: Groq/OpenAI-compatible flow, runner compatibility aliases |
+| **v0.4.0** | Planned | CLI parity for research-grade workflows and optional richer HTML reports |
 
 ---
 

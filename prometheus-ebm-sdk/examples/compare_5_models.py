@@ -8,7 +8,7 @@ from prometheus_ebm import PrometheusRunner, RunConfig
 
 # Configure a multi-model comparison run
 config = RunConfig(
-    mode="compare",
+    mode="extended",
     models=[
         "google/gemini-3.1-pro-preview",
         "anthropic/claude-opus-4-6@default",
@@ -25,9 +25,10 @@ config = RunConfig(
     stress_decision_ratio=0.25,   # 25% of items get decision stress
     stress_clarity_ratio=0.10,    # 10% of items get clarity stress
     
-    # Statistical configuration 
-    seeds=["prometheus-2026-s1", "prometheus-2026-s2"],
-    bootstrap_iterations=2000,
+    # Statistical configuration
+    seeds=["prometheus-2026-s1", "prometheus-2026-s2", "prometheus-2026-s3"],
+    probe_seeds=["prometheus-2026-p1", "prometheus-2026-p2", "prometheus-2026-p3"],
+    bootstrap_iterations=3000,
     
     # Runtime safety
     timeout_per_model=10800,      # 3 hours per model
@@ -40,6 +41,6 @@ config.validate()
 # Run the benchmark
 # runner = PrometheusRunner(config)
 # results = runner.run()
-# results.export("5_model_comparison.html")
+# results.export("prometheus_sdk_v5_bundle.zip")
 
 print("\n[Note: Uncomment the runner lines above to execute the full benchmark]")

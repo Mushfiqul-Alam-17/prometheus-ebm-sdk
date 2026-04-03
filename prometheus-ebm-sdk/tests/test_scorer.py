@@ -155,7 +155,7 @@ def test_config_summary():
     )
     summary = config.summary()
     assert "PROMETHEUS-EBM" in summary
-    assert "compare" in summary
+    assert "standard" in summary
     assert "claude-opus" in summary
 
 
