@@ -8,7 +8,7 @@ This workspace contains the PROMETHEUS benchmark notebooks, SDK, datasets, and t
   - `benchmark-v4.ipynb` (current research-grade notebook)
   - `benchmark-v3.ipynb` (previous version)
 - `data/`
-  - `prometheus_200_multimodel_dataset.json`
+  - `prometheus_real_dataset.json`
   - `probe_ambiguity.json`
   - `probe_contradictions.json`
   - `results/` (legacy and exported artifacts)

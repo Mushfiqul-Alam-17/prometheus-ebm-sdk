@@ -138,6 +138,22 @@ config = RunConfig(
 )
 ```
 
+### Using Custom Datasets
+
+The SDK comes bundled with 4 default datasets out of the box (the full 1,000-item deep probe, the 200-item standard, the ambiguity probe, and the contradiction probe). 
+
+If you want to evaluate models on your own specialized dataset, format your test array as a JSON file matching the 4-class taxonomy, and pass the path directly to the `RunConfig`:
+
+```python
+config = RunConfig(
+    mode="standard",
+    models=["anthropic/claude-opus-4-6"],
+    provider="anthropic",
+    api_key="sk-...",
+    dataset_path="c:/path/to/your/custom_dataset.json" # Overrides the defaults
+)
+```
+
 ### Scoring Only (Bring Your Own Data)
 
 If you already have model responses and just need the ECI/Brier/D-Prime scores:

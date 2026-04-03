@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prometheus-ebm"
-version = "0.1.0"
+version = "0.1.1"
 description = "PROMETHEUS-EBM: Benchmarking Epistemic Metacognition in AI Models"
 readme = "README.md"
 license = {text = "MIT"}
@@ -39,3 +39,6 @@ Repository = "https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk"
 
 [tool.setuptools.packages.find]
 include = ["prometheus_ebm*"]
+
+[tool.setuptools.package-data]
+prometheus_ebm = ["data/*.json"]

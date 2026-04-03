@@ -9,7 +9,7 @@ Scope: research-grade v1 only (no human-feedback or paper-writing tasks)
 
 Use current Kaggle input bundle as the frozen baseline for v4 first full run:
 
-- kaggle/input_bundle/prometheus_200_multimodel_dataset.json
+- kaggle/input_bundle/prometheus_real_dataset.json
 - kaggle/input_bundle/probe_ambiguity.json
 - kaggle/input_bundle/probe_contradictions.json
 

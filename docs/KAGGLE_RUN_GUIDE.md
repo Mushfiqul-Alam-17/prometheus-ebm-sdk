@@ -4,7 +4,7 @@
 
 Upload these 3 files as a Kaggle dataset (already prepared in `kaggle/input_bundle/`):
 
-1. `prometheus_200_multimodel_dataset.json`
+1. `prometheus_real_dataset.json`
 2. `probe_ambiguity.json`
 3. `probe_contradictions.json`
 

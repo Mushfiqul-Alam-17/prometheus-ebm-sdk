@@ -7,7 +7,7 @@
   - `benchmark-v4.ipynb` is the primary notebook for research-grade v1.
 
 - `data/`
-  - `prometheus_200_multimodel_dataset.json`: Epoch-1 base dataset.
+  - `prometheus_real_dataset.json`: Epoch-1 base dataset.
   - `probe_ambiguity.json`, `probe_contradictions.json`: Epoch-2 probe datasets.
   - `results/`: previously generated outputs and analysis snapshots.
 
