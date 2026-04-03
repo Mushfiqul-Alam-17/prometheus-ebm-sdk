@@ -63,6 +63,7 @@ class PrometheusRunner:
         self.results = BenchmarkResults(
             config=self.config,
             model_scores=scored,
+            raw_dataframe=raw_results,
             statistics=stats,
             elapsed_seconds=time.time() - self._start_time,
         )
@@ -299,9 +300,10 @@ class PrometheusRunner:
 class BenchmarkResults:
     """Container for benchmark results with export capabilities."""
     
-    def __init__(self, config, model_scores, statistics, elapsed_seconds):
+    def __init__(self, config, model_scores, raw_dataframe, statistics, elapsed_seconds):
         self.config = config
         self.model_scores = model_scores
+        self.raw_dataframe = raw_dataframe
         self.statistics = statistics
         self.elapsed_seconds = elapsed_seconds
     
@@ -310,7 +312,7 @@ class BenchmarkResults:
         
         Args:
             path: Output file path
-            format: "csv", "json", "html", or "auto" (inferred from extension)
+            format: "csv", "json", "zip", or "auto" (inferred from extension)
         """
         if format == "auto":
             ext = os.path.splitext(path)[1].lower()
@@ -320,8 +322,8 @@ class BenchmarkResults:
             self._export_csv(path)
         elif format == "json":
             self._export_json(path)
-        elif format == "html":
-            self._export_html(path)
+        elif format == "zip":
+            self._export_zip(path)
         else:
             raise ValueError(f"Unsupported format: {format}")
     
@@ -348,10 +350,34 @@ class BenchmarkResults:
     
     def _export_json(self, path):
         """Export as JSON."""
-        # Placeholder
         pass
-    
-    def _export_html(self, path):
-        """Export as HTML report."""
-        # Placeholder
-        pass
+        
+    def _export_zip(self, path):
+        """Export complete results as a ZIP archive (metrics + raw items)."""
+        import zipfile
+        import tempfile
+        import shutil
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            metrics_path = os.path.join(temp_dir, "model_scores.csv")
+            self._export_csv(metrics_path)
+            
+            raw_path = os.path.join(temp_dir, "raw_evaluations.csv")
+            if self.raw_dataframe is not None:
+                self.raw_dataframe.to_csv(raw_path, index=False)
+                
+            config_path = os.path.join(temp_dir, "run_config.json")
+            with open(config_path, 'w') as f:
+                import json
+                json.dump({'mode': self.config.mode, 'models': self.config.models}, f)
+                
+            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                zipf.write(metrics_path, "model_scores.csv")
+                if os.path.exists(raw_path):
+                    zipf.write(raw_path, "raw_evaluations.csv")
+                zipf.write(config_path, "run_config.json")
+                
+            print(f"Complete archive exported to {path}")
+        finally:
+            shutil.rmtree(temp_dir)
