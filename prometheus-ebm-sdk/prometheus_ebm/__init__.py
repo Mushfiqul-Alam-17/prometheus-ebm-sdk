@@ -27,7 +27,7 @@ Quick Start:
 Full documentation: https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 from prometheus_ebm.config import RunConfig
 from prometheus_ebm.scorer import ECIScorer, BrierDecomposition, Type2DPrime, ScoringResult
