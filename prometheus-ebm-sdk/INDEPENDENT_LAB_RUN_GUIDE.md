@@ -19,6 +19,18 @@ pip install --upgrade pip
 pip install -e .
 ```
 
+One-line install from repo subdirectory (without cloning):
+
+```bash
+pip install "git+https://github.com/Mushfiqul-Alam-17/prometheus-ebm.git#subdirectory=prometheus-ebm-sdk"
+```
+
+Install from PyPI (after release upload completes):
+
+```bash
+pip install --upgrade prometheus-ebm
+```
+
 ## 2) Configure API route
 
 Use one of:
@@ -111,3 +123,20 @@ print(results.validate_research_grade())
 ## 7) Why results can still differ slightly across labs
 
 The SDK logic and artifact contract are aligned, but remote model providers can update model backends over time. This can produce small output/score differences across dates or endpoints even with identical SDK settings.
+
+## 8) Maintainer publish commands (GitHub + PyPI)
+
+```bash
+git push origin master --follow-tags
+python -m build
+python -m twine check dist/*
+python -m twine upload dist/*
+```
+
+PowerShell token-based upload (recommended for CI/non-interactive environments):
+
+```powershell
+$env:TWINE_USERNAME="__token__"
+$env:TWINE_PASSWORD="<PYPI_API_TOKEN>"
+python -m twine upload --non-interactive dist/*
+```
