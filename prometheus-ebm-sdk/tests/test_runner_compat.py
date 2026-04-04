@@ -38,7 +38,7 @@ def test_run_all_alias_and_export_zip_shorthand(tmp_path: Path):
     _make_dataset(dataset_path, n_items=10)
 
     config = RunConfig(
-        mode="standard",
+        mode="deep_probe",
         models=["llama-3.1-70b-versatile"],
         provider="openai",
         api_key="dummy-key",
@@ -67,7 +67,7 @@ def test_multistage_is_separate_from_epoch1_scoring(tmp_path: Path):
     _make_dataset(dataset_path, n_items=10)
 
     config = RunConfig(
-        mode="standard",
+        mode="deep_probe",
         models=["llama-3.1-70b-versatile"],
         provider="openai",
         api_key="dummy-key",

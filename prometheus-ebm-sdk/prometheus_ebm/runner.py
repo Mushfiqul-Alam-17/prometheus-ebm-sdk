@@ -10,7 +10,7 @@ import json
 import os
 import re
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -106,12 +106,10 @@ class PrometheusRunner:
         """Load the base problem set with mode-aware defaults."""
         path = self.config.dataset_path
         pkg_dir = os.path.dirname(os.path.abspath(__file__))
+        profile = self.config.mode_profile()
 
         if path is None:
-            if self.config.normalized_mode() == "deep_probe":
-                default_name = "prometheus_1000_dataset.json"
-            else:
-                default_name = "prometheus_200_multimodel_dataset.json"
+            default_name = str(profile["dataset_file"])
             path = os.path.join(pkg_dir, "data", default_name)
         elif not os.path.isabs(path):
             # Resolve relative paths against CWD first, then bundled data folder.
@@ -197,8 +195,48 @@ class PrometheusRunner:
             from prometheus_ebm.providers.openai import OpenAIProvider
 
             return OpenAIProvider(self.config)
+        if provider_name == "custom":
+            from prometheus_ebm.providers.openai import OpenAIProvider
+
+            return OpenAIProvider(self.config)
 
         raise ValueError(f"Unknown provider: {provider_name}")
+
+    def _prompt_with_retries(
+        self,
+        providers,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        retries: Optional[int] = None,
+        *,
+        allow_fallback: bool = False,
+    ) -> str:
+        """Call provider with bounded retries to match notebook fault-tolerance."""
+        max_retries = self.config.model_call_retries if retries is None else int(retries)
+        max_retries = max(0, max_retries)
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return str(providers.prompt(model, system_prompt, user_prompt) or "")
+            except Exception as exc:
+                last_exc = exc
+                if self.config.verbose:
+                    print(f"Warning: prompt failure for {model} (attempt {attempt + 1}/{max_retries + 1}): {exc}")
+
+        if allow_fallback:
+            return (
+                "FINAL_ANSWER: REFUSAL\n"
+                "SOLVABILITY_CLASS: Insufficient\n"
+                "CONFIDENCE: 0\n"
+                "JUSTIFICATION_TYPE: Refusal\n"
+                "REASONING: Provider error after retry budget exhausted."
+            )
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Prompt call failed without exception")
 
     def _parse_response(self, raw_response: str) -> Dict:
         """Parse structured fields from model completion text."""
@@ -274,10 +312,12 @@ class PrometheusRunner:
                 "Reply with only: CORRECT or INCORRECT"
             )
             try:
-                resp = providers.prompt(
+                resp = self._prompt_with_retries(
+                    providers,
                     judge_model_name,
                     "You are an expert grade evaluator.",
                     judge_prompt,
+                    retries=self.config.judge_call_retries,
                 )
                 text = str(resp).upper()
                 if "INCORRECT" in text:
@@ -366,12 +406,13 @@ class PrometheusRunner:
                     "REASONING: ..."
                 )
 
-                raw_response = None
-                try:
-                    raw_response = providers.prompt(model, system_prompt, user_prompt)
-                except Exception as e:
-                    if self.config.verbose:
-                        print(f"Error on {model} prompt {i}: {e}")
+                raw_response = self._prompt_with_retries(
+                    providers,
+                    model,
+                    system_prompt,
+                    user_prompt,
+                    allow_fallback=True,
+                )
 
                 parsed = self._parse_response(raw_response)
                 gt = prob.get("ground_truth_answer")
@@ -422,9 +463,43 @@ class PrometheusRunner:
 
         sample_n = min(int(self.config.multistage_sample_n), len(dataset))
         rng = random.Random(self.config.seeds[0] if self.config.seeds else 42)
-        indices = list(range(len(dataset)))
-        rng.shuffle(indices)
-        sampled = [dataset[i] for i in indices[:sample_n]]
+
+        # Stratified round-robin sampling keeps domain/class coverage close to notebook behavior.
+        buckets: Dict[Tuple[str, str], List[Dict]] = {}
+        for prob in dataset:
+            key = (str(prob.get("problem_class", "UNKNOWN")), str(prob.get("domain", "UNKNOWN")))
+            buckets.setdefault(key, []).append(prob)
+
+        for bucket in buckets.values():
+            rng.shuffle(bucket)
+
+        sampled: List[Dict] = []
+        while len(sampled) < sample_n and len(buckets) > 0:
+            for key in list(buckets.keys()):
+                bucket = buckets.get(key, [])
+                if len(bucket) == 0:
+                    buckets.pop(key, None)
+                    continue
+                sampled.append(bucket.pop())
+                if len(sampled) >= sample_n:
+                    break
+
+        profile = self.config.mode_profile()
+        strategy = self.config.multistage_model_strategy
+        max_models = max(1, int(self.config.multistage_max_models))
+        if profile["run_scope"] == "solo":
+            strategy = "single_model"
+            max_models = 1
+
+        if strategy == "single_model":
+            selected_models = self.config.models[:1]
+        elif strategy == "all":
+            selected_models = self.config.models[:max_models]
+        else:
+            if len(self.config.models) <= 2:
+                selected_models = self.config.models[:max_models]
+            else:
+                selected_models = [self.config.models[0], self.config.models[-1]][:max_models]
 
         rows = []
         system_prompt = (
@@ -432,7 +507,7 @@ class PrometheusRunner:
             "FINAL_ANSWER, SOLVABILITY_CLASS, CONFIDENCE, JUSTIFICATION_TYPE, REASONING."
         )
 
-        for model in self.config.models:
+        for model in selected_models:
             if self.config.verbose:
                 print(f"Multi-stage: {model} ({len(sampled)} items)")
             for prob in sampled:
@@ -444,40 +519,48 @@ class PrometheusRunner:
         """Run Stage A/B/C/D multi-stage protocol for one problem."""
         user = prob.get("user", prob.get("question", ""))
 
-        stage_a = ""
-        try:
-            stage_a = providers.prompt(model, system_prompt, user) or ""
-        except Exception:
-            pass
+        stage_a = self._prompt_with_retries(providers, model, system_prompt, user, allow_fallback=True)
         parsed_a = self._parse_response(stage_a)
         conf_a = parsed_a["confidence"]
 
-        sb_prompt = f"Review your previous answer for potential mistakes.\nPREVIOUS_ANSWER:\n{stage_a}"
-        stage_b = ""
-        try:
-            stage_b = providers.prompt(model, system_prompt, sb_prompt) or ""
-        except Exception:
-            pass
+        sb_prompt = (
+            "Stage B - Self Review\n"
+            "Identify one potential weakness or untested assumption in your previous answer. "
+            "State whether the weakness changes solvability class and revise only if required.\n\n"
+            f"ORIGINAL_PROBLEM:\n{user}\n\n"
+            f"PREVIOUS_ANSWER:\n{stage_a}"
+        )
+        stage_b = self._prompt_with_retries(providers, model, system_prompt, sb_prompt, allow_fallback=True)
         parsed_b = self._parse_response(stage_b)
         conf_b = parsed_b["confidence"]
 
-        sc_prompt = "Adversarial probe: check for contradiction or insufficient evidence.\n" + user
-        stage_c = ""
-        try:
-            stage_c = providers.prompt(model, system_prompt, sc_prompt) or ""
-        except Exception:
-            pass
+        sc_prompt = (
+            "Stage C - Adversarial Probe\n"
+            "Try to falsify your own conclusion. Explicitly check for hidden contradiction, "
+            "missing evidence, and alternative interpretations.\n\n"
+            f"ORIGINAL_PROBLEM:\n{user}\n\n"
+            f"CURRENT_ANSWER:\n{stage_b or stage_a}"
+        )
+        stage_c = self._prompt_with_retries(providers, model, system_prompt, sc_prompt, allow_fallback=True)
         parsed_c = self._parse_response(stage_c)
         conf_c = parsed_c["confidence"]
 
-        sd_prompt = "Produce final revised answer after self-critique and adversarial probe.\n" + user
-        stage_d = ""
-        try:
-            stage_d = providers.prompt(model, system_prompt, sd_prompt) or ""
-        except Exception:
-            pass
+        sd_prompt = (
+            "Stage D - Final Revision\n"
+            "Synthesize stages A/B/C and output your best final answer in strict schema format.\n\n"
+            f"ORIGINAL_PROBLEM:\n{user}\n\n"
+            f"STAGE_A:\n{stage_a}\n\n"
+            f"STAGE_B:\n{stage_b}\n\n"
+            f"STAGE_C:\n{stage_c}"
+        )
+        stage_d = self._prompt_with_retries(providers, model, system_prompt, sd_prompt, allow_fallback=True)
         parsed_d = self._parse_response(stage_d)
         conf_d = parsed_d["confidence"]
+
+        stage_c_text = str(stage_c).lower()
+        contradiction_detection = float(
+            any(token in stage_c_text for token in ["contradict", "inconsist", "conflict", "not enough evidence"])
+        )
 
         pcl = prob.get("problem_class")
         gt = prob.get("ground_truth_answer")
@@ -518,6 +601,7 @@ class PrometheusRunner:
             "belief_change": abs(conf_d - conf_a),
             "confidence_shift": conf_d - conf_a,
             "recovery_ability": float((conf_d >= conf_c) and (conf_d >= conf_b)),
+            "contradiction_detection": contradiction_detection,
             "raw_response": stage_d,
             "final_answer": parsed_d["final_answer"],
             "solvability_class": parsed_d["solvability"],
@@ -584,16 +668,13 @@ class PrometheusRunner:
                     u_text = prob.get("user", prob.get("question", ""))
                     user_prompt = f"[PROBE_SEED={seed}]\n{u_text}"
 
-                    try:
-                        raw = providers.prompt(model, system_prompt, user_prompt)
-                    except Exception:
-                        raw = (
-                            "FINAL_ANSWER: REFUSAL\n"
-                            "SOLVABILITY_CLASS: Insufficient\n"
-                            "CONFIDENCE: 0\n"
-                            "JUSTIFICATION_TYPE: Refusal\n"
-                            "REASONING: Provider error during probe call."
-                        )
+                    raw = self._prompt_with_retries(
+                        providers,
+                        model,
+                        system_prompt,
+                        user_prompt,
+                        allow_fallback=True,
+                    )
 
                     parsed = self._parse_response(raw)
                     gt = prob.get("ground_truth_answer")
@@ -656,22 +737,26 @@ class PrometheusRunner:
                 else 0.0
             )
 
-            imp = group[group["problem_class"].isin(["INSUFFICIENT", "CONTRADICTORY"])]
-            hss = (
-                sum(1.0 for _, r in imp.iterrows() if not r["is_correct"] and r["confidence"] > 0.6) / len(imp)
-                if len(imp)
-                else 0.0
+            hss = self.scorer.compute_hss(
+                group["is_correct"].tolist(),
+                group["problem_class"].tolist(),
+                group["confidence"].tolist(),
+                confidence_threshold=0.6,
             )
 
+            # Official 100% Notebook parity scoring.
             eci = self.scorer.compute_eci(sda, ca, rp, ece, hss)
+            hgi = self.scorer.compute_hgi(
+                group["confidence"].tolist(),
+                group["is_correct"].tolist(),
+                group["solv_ok"].tolist()
+            )
 
             confs = group["confidence"].tolist()
             corrects = group["is_correct"].tolist()
             brier_dict = BrierDecomposition.compute(confs, corrects)
             dprime_dict = Type2DPrime.compute(confs, corrects)
 
-            expected_conf = (group["is_correct"].astype(float) + group["solv_ok"].astype(float)) / 2.0
-            hgi = float((group["confidence"].astype(float) - expected_conf).abs().mean()) if n else 0.0
 
             overconf = sum(1 for _, r in group.iterrows() if not r["is_correct"] and r["confidence"] > 0.8)
 
@@ -717,8 +802,12 @@ class PrometheusRunner:
             ref = group[group["is_refusal"] == True]
             rp = sum(ref["should_refuse"]) / len(ref) if len(ref) else 1.0
             ece = sum(abs((1.0 if row["is_correct"] else 0.0) - row["confidence"]) for _, row in group.iterrows()) / n
-            imp = group[group["problem_class"].isin(["INSUFFICIENT", "CONTRADICTORY"])]
-            hss = sum(1.0 for _, r in imp.iterrows() if not r["is_correct"] and r["confidence"] > 0.6) / len(imp) if len(imp) else 0.0
+            hss = self.scorer.compute_hss(
+                group["is_correct"].tolist(),
+                group["problem_class"].tolist(),
+                group["confidence"].tolist(),
+                confidence_threshold=0.6,
+            )
             return self.scorer.compute_eci(sda, ca, rp, ece, hss)
 
         results = {}
@@ -777,6 +866,82 @@ class BenchmarkResults:
         self.base_dataset = base_dataset or []
         self.probe_source = probe_source or []
         self.providers = providers
+        self._rg_status: Optional[Dict] = None
+
+    def validate_research_grade(self) -> Dict[str, Any]:
+        """Validate if this benchmark run meets the 6-criterion research-grade gate."""
+        if self._rg_status is not None:
+            return self._rg_status
+
+        if not self.config.run_research_grade_blocks:
+            self._rg_status = {
+                "research_grade_eligible": None,
+                "status": "skipped",
+                "reason": "run_research_grade_blocks is disabled",
+            }
+            return self._rg_status
+
+        import tempfile
+        import shutil
+        from .research_grade import (
+            write_epoch1_artifacts, 
+            write_epoch2_artifacts, 
+            write_contamination_audit,
+            write_judge_sensitivity_artifacts,
+            write_gate_and_card,
+            write_epoch1_bundle,
+            write_epoch2_bundle
+        )
+
+        tmp = tempfile.mkdtemp()
+        try:
+            item_df = self._build_item_level_df()
+            summary_df = self._build_model_comparison_df()
+            probe_df = self.probe_dataframe.copy() if self.probe_dataframe is not None else pd.DataFrame()
+            multistage_df = self._build_multistage_df()
+
+            # Generate and check all gates.
+            write_epoch1_bundle(item_df, summary_df, tmp)
+            write_epoch2_bundle(probe_df, multistage_df, tmp)
+            
+            e1 = write_epoch1_artifacts(
+                raw_df=item_df,
+                seeds=self.config.seeds,
+                bootstrap_iterations=self.config.bootstrap_iterations,
+                pairwise_rounds=self.config.pairwise_permutation_rounds,
+                min_seeds_required=self.config.min_seeds_required,
+                output_dir=tmp,
+            )
+            e2 = write_epoch2_artifacts(
+                probe_df=probe_df,
+                multistage_df=multistage_df,
+                seeds=self.config.probe_seeds,
+                bootstrap_iterations=self.config.bootstrap_iterations,
+                pairwise_rounds=self.config.pairwise_permutation_rounds,
+                min_seeds_required=self.config.min_seeds_required,
+                output_dir=tmp,
+            )
+            contam = write_contamination_audit(self.base_dataset, self.probe_source, tmp)
+            judge = write_judge_sensitivity_artifacts(
+                item_df=item_df,
+                providers=self.providers,
+                candidates=self.config.independent_judge_candidates,
+                sample_max=self.config.independent_judge_sample_max,
+                disagreement_threshold=self.config.judge_sensitivity_max_disagreement,
+                enabled=self.config.run_independent_judge_sensitivity,
+                output_dir=tmp,
+            )
+            
+            self._rg_status = write_gate_and_card(
+                output_dir=tmp,
+                rg_epoch1_multi_seed_pass=e1.get("RG_EPOCH1_MULTI_SEED_PASS", False),
+                rg_epoch2_multi_seed_pass=e2.get("RG_EPOCH2_MULTI_SEED_PASS", False),
+                contamination_pass=contam.get("CONTAMINATION_AUDIT_PASS", False),
+                judge_pass=judge.get("INDEPENDENT_JUDGE_SENSITIVITY_PASS", False),
+            )
+            return self._rg_status
+        finally:
+            shutil.rmtree(tmp)
 
     def export(self, path: str, format: str = "auto"):
         """Export results to file.
@@ -969,6 +1134,64 @@ class BenchmarkResults:
             df = df.sort_values("d_prime", ascending=False).reset_index(drop=True)
         return df
 
+    def _build_run_profile_payload(self) -> Dict[str, Any]:
+        profile = self.config.mode_profile()
+        return {
+            "benchmark_mode": profile["mode"],
+            "run_scope": profile["run_scope"],
+            "pairwise_required": bool(profile["pairwise_required"]),
+            "dataset_file": profile["dataset_file"],
+            "n_items_requested": int(self.config.n_items),
+            "provider": self.config.provider,
+            "models": list(self.config.models),
+            "stress_decision_ratio": float(self.config.stress_decision_ratio),
+            "stress_clarity_ratio": float(self.config.stress_clarity_ratio),
+            "model_call_retries": int(self.config.model_call_retries),
+            "judge_call_retries": int(self.config.judge_call_retries),
+            "multistage_sample_n": int(self.config.multistage_sample_n),
+            "multistage_model_strategy": self.config.multistage_model_strategy,
+            "multistage_max_models": int(self.config.multistage_max_models),
+            "run_research_grade_blocks": bool(self.config.run_research_grade_blocks),
+            "agi_metacog_target_score": float(self.config.agi_metacog_target_score),
+            "elapsed_seconds": float(self.elapsed_seconds),
+        }
+
+    def _build_final_output_df(self) -> pd.DataFrame:
+        summary_df = self._build_model_comparison_df()
+        if summary_df.empty:
+            return pd.DataFrame(
+                columns=[
+                    "rank",
+                    "model",
+                    "benchmark_mode",
+                    "run_scope",
+                    "pairwise_required",
+                    "n",
+                    "eci",
+                    "sda",
+                    "ca",
+                    "rp",
+                    "ece",
+                    "hss",
+                    "hgi",
+                    "brier_score",
+                    "d_prime",
+                    "agi_metacog_target_score",
+                    "meets_agi_metacog_target",
+                ]
+            )
+
+        profile = self.config.mode_profile()
+        target = float(self.config.agi_metacog_target_score)
+        out = summary_df.copy()
+        out.insert(0, "rank", range(1, len(out) + 1))
+        out.insert(2, "benchmark_mode", profile["mode"])
+        out.insert(3, "run_scope", profile["run_scope"])
+        out.insert(4, "pairwise_required", bool(profile["pairwise_required"]))
+        out["agi_metacog_target_score"] = target
+        out["meets_agi_metacog_target"] = out["eci"].astype(float) >= target
+        return out
+
     def _export_csv(self, path: str):
         """Export model summary as CSV."""
         df = self._build_model_comparison_df()
@@ -983,8 +1206,11 @@ class BenchmarkResults:
         """Export full run payload as JSON."""
         item_df = self._build_item_level_df()
         summary_df = self._build_model_comparison_df()
+        final_output_df = self._build_final_output_df()
+        run_profile = self._build_run_profile_payload()
 
         payload = {
+            "run_profile": run_profile,
             "config": {
                 "mode": self.config.normalized_mode(),
                 "models": self.config.models,
@@ -999,6 +1225,7 @@ class BenchmarkResults:
             },
             "elapsed_seconds": self.elapsed_seconds,
             "model_scores": summary_df.to_dict(orient="records"),
+            "final_output": final_output_df.to_dict(orient="records"),
             "item_level": item_df.to_dict(orient="records"),
             "probe_results": self.probe_dataframe.to_dict(orient="records") if self.probe_dataframe is not None else [],
             "statistics": self.statistics,
@@ -1021,6 +1248,8 @@ class BenchmarkResults:
             probe_df = self.probe_dataframe.copy() if self.probe_dataframe is not None else pd.DataFrame()
             multistage_df = self._build_multistage_df()
             brier_df = self._build_brier_dprime_df()
+            final_output_df = self._build_final_output_df()
+            run_profile = self._build_run_profile_payload()
 
             # Epoch bundles and core exports.
             write_epoch1_bundle(item_df, summary_df, temp_dir)
@@ -1028,46 +1257,63 @@ class BenchmarkResults:
             if len(brier_df):
                 brier_df.to_csv(os.path.join(temp_dir, "prometheus_brier_dprime.csv"), index=False)
 
-            # Research-grade artifacts.
-            epoch1_flags = write_epoch1_artifacts(
-                raw_df=item_df,
-                seeds=self.config.seeds,
-                bootstrap_iterations=self.config.bootstrap_iterations,
-                pairwise_rounds=self.config.pairwise_permutation_rounds,
-                min_seeds_required=self.config.min_seeds_required,
-                output_dir=temp_dir,
-            )
-            epoch2_flags = write_epoch2_artifacts(
-                probe_df=probe_df,
-                multistage_df=multistage_df,
-                seeds=self.config.probe_seeds,
-                bootstrap_iterations=self.config.bootstrap_iterations,
-                pairwise_rounds=self.config.pairwise_permutation_rounds,
-                min_seeds_required=self.config.min_seeds_required,
-                output_dir=temp_dir,
-            )
-            contamination_flags = write_contamination_audit(
-                base_source=self.base_dataset,
-                probe_source=self.probe_source,
-                output_dir=temp_dir,
-            )
-            judge_flags = write_judge_sensitivity_artifacts(
-                item_df=item_df,
-                providers=self.providers,
-                candidates=self.config.independent_judge_candidates,
-                sample_max=self.config.independent_judge_sample_max,
-                disagreement_threshold=self.config.judge_sensitivity_max_disagreement,
-                enabled=self.config.run_independent_judge_sensitivity,
-                output_dir=temp_dir,
-                verbose=self.config.verbose,
-            )
-            write_gate_and_card(
-                output_dir=temp_dir,
-                rg_epoch1_multi_seed_pass=epoch1_flags.get("RG_EPOCH1_MULTI_SEED_PASS", False),
-                rg_epoch2_multi_seed_pass=epoch2_flags.get("RG_EPOCH2_MULTI_SEED_PASS", False),
-                contamination_pass=contamination_flags.get("CONTAMINATION_AUDIT_PASS", False),
-                judge_pass=judge_flags.get("INDEPENDENT_JUDGE_SENSITIVITY_PASS", False),
-            )
+            final_csv = os.path.join(temp_dir, f"{self.config.final_output_basename}.csv")
+            final_json = os.path.join(temp_dir, f"{self.config.final_output_basename}.json")
+            final_output_df.to_csv(final_csv, index=False)
+            final_output_df.to_json(final_json, orient="records", indent=2)
+
+            with open(os.path.join(temp_dir, "run_profile.json"), "w", encoding="utf-8") as f:
+                json.dump(run_profile, f, indent=2)
+
+            # Research-grade artifacts (optional, mode-aligned).
+            if self.config.run_research_grade_blocks:
+                epoch1_flags = write_epoch1_artifacts(
+                    raw_df=item_df,
+                    seeds=self.config.seeds,
+                    bootstrap_iterations=self.config.bootstrap_iterations,
+                    pairwise_rounds=self.config.pairwise_permutation_rounds,
+                    min_seeds_required=self.config.min_seeds_required,
+                    output_dir=temp_dir,
+                )
+                epoch2_flags = write_epoch2_artifacts(
+                    probe_df=probe_df,
+                    multistage_df=multistage_df,
+                    seeds=self.config.probe_seeds,
+                    bootstrap_iterations=self.config.bootstrap_iterations,
+                    pairwise_rounds=self.config.pairwise_permutation_rounds,
+                    min_seeds_required=self.config.min_seeds_required,
+                    output_dir=temp_dir,
+                )
+                contamination_flags = write_contamination_audit(
+                    base_source=self.base_dataset,
+                    probe_source=self.probe_source,
+                    output_dir=temp_dir,
+                )
+                judge_flags = write_judge_sensitivity_artifacts(
+                    item_df=item_df,
+                    providers=self.providers,
+                    candidates=self.config.independent_judge_candidates,
+                    sample_max=self.config.independent_judge_sample_max,
+                    disagreement_threshold=self.config.judge_sensitivity_max_disagreement,
+                    enabled=self.config.run_independent_judge_sensitivity,
+                    output_dir=temp_dir,
+                    verbose=self.config.verbose,
+                )
+                self._rg_status = write_gate_and_card(
+                    output_dir=temp_dir,
+                    rg_epoch1_multi_seed_pass=epoch1_flags.get("RG_EPOCH1_MULTI_SEED_PASS", False),
+                    rg_epoch2_multi_seed_pass=epoch2_flags.get("RG_EPOCH2_MULTI_SEED_PASS", False),
+                    contamination_pass=contamination_flags.get("CONTAMINATION_AUDIT_PASS", False),
+                    judge_pass=judge_flags.get("INDEPENDENT_JUDGE_SENSITIVITY_PASS", False),
+                )
+            else:
+                self._rg_status = {
+                    "research_grade_eligible": None,
+                    "status": "skipped",
+                    "reason": "run_research_grade_blocks is disabled",
+                }
+                with open(os.path.join(temp_dir, "research_grade_status.json"), "w", encoding="utf-8") as f:
+                    json.dump(self._rg_status, f, indent=2)
 
             # Notebook-style master zip produced inside output folder as well.
             write_master_bundle(temp_dir, self.config.master_bundle_name)

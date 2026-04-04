@@ -10,6 +10,8 @@ PROMETHEUS-EBM evaluates whether frontier AI models can recognize the *limits of
 
 > **Companion to the V5 notebook protocol:** This SDK now mirrors the `Final_V5.ipynb` artifact contract for standalone, reproducible lab runs.
 
+Independent lab run guide: [INDEPENDENT_LAB_RUN_GUIDE.md](INDEPENDENT_LAB_RUN_GUIDE.md)
+
 ---
 
 ## Why This Exists
@@ -70,14 +72,25 @@ pip install "prometheus-ebm[all]"         # All providers
 
 ---
 
+## Dataset Navigation (V5 Lab Standard)
+
+To ensure consistency with the `Final_V5.ipynb` research protocol, the SDK uses a tiered data structure:
+
+- **Individual Model Testing** (`mode="deep_probe"`): Uses the **1,000-item Master Set** (`prometheus_1000_dataset.json`). Optimized for deep statistical significance on a single model.
+- **Multi-model Comparison** (`mode="compare"`/`"standard"`): Uses the **200-item Leaderboard Subset** (`prometheus_200_multimodel_dataset.json`). Optimized for rapid benchmarking across multiple model families.
+
+The SDK automatically selects the appropriate file based on your `mode`, but you can always override this by providing a custom `dataset_path`.
+
+---
+
 ## Quick Start
 
 ### Compare Multiple Models
 
 ```python
-from prometheus_ebm import PrometheusRunner, RunConfig
+from prometheus_ebm import build_v5_config, run_v5_workflow
 
-config = RunConfig(
+config = build_v5_config(
     mode="extended",
     models=[
         "anthropic/claude-opus-4-6@default",
@@ -92,9 +105,7 @@ config = RunConfig(
     stress_clarity_ratio=0.20,
 )
 
-runner = PrometheusRunner(config)
-results = runner.run()
-results.export("prometheus_sdk_v5_bundle.zip")
+results = run_v5_workflow(config, export_bundle=True)
 ```
 
 ### Deep Probe a Single Model (1,000 Items)
@@ -168,6 +179,24 @@ results.export("zip")
 
 See `examples/test_groq.py` for a complete runnable example.
 
+### Use Your Own OpenAI-Compatible Endpoint
+
+`provider="custom"` routes through the OpenAI adapter with your `api_base_url`, which is useful for local gateways, enterprise routers, and lab-hosted endpoints.
+
+```python
+from prometheus_ebm import RunConfig, PrometheusRunner
+
+config = RunConfig(
+    mode="standard",
+    models=["your-lab-model"],
+    provider="custom",
+    api_key="sk-your-key",
+    api_base_url="https://your.endpoint.example/v1",
+)
+
+results = PrometheusRunner(config).run()
+```
+
 ### Using Custom Datasets
 
 The SDK comes bundled with 4 default datasets out of the box (the full 1,000-item deep probe, the 200-item standard, the ambiguity probe, and the contradiction probe). 
@@ -198,7 +227,7 @@ sda = ECIScorer.compute_sda(predicted_classes, true_classes)
 ca  = ECIScorer.compute_ca(answers_correct, true_classes)
 rp  = ECIScorer.compute_rp(predicted_classes, true_classes)
 ece = ECIScorer.compute_ece(confidences, correctness)
-hss = ECIScorer.compute_hss(predicted_classes, true_classes, answers_given)
+hss = ECIScorer.compute_hss(answers_correct, true_classes, confidences)
 
 eci = scorer.compute_eci(sda, ca, rp, ece, hss)
 
@@ -221,6 +250,7 @@ dprime = Type2DPrime.compute(confidences, correctness, threshold=0.7)
 | `openrouter` | Yes | 100+ | Broadest model access with one key |
 | `anthropic` | Yes | Claude family | Direct Anthropic API access |
 | `openai` | Yes | GPT family | Direct OpenAI API access |
+| `custom` | Yes | OpenAI-compatible endpoints | Self-hosted/lab APIs via custom base URL |
 
 **Default behavior:** If no API key is provided, the SDK falls back to the Kaggle provider (which requires no authentication when running inside a Kaggle notebook).
 
@@ -235,9 +265,9 @@ RunConfig(
     models=[...],             # List of model identifiers
 
     # ── Provider ──
-    provider="kaggle",        # "kaggle", "openrouter", "anthropic", "openai"
+    provider="kaggle",        # "kaggle", "openrouter", "anthropic", "openai", "custom"
     api_key=None,             # Required for non-Kaggle providers
-    api_base_url=None,        # Custom API endpoint (for self-hosted models)
+    api_base_url=None,        # Required when provider="custom"
 
     # ── Dataset ──
     n_items=200,              # Base problem count (200 standard, 1000 for deep probe)
@@ -251,6 +281,10 @@ RunConfig(
     bootstrap_iterations=3000,    # Bootstrap iterations for CIs
     pairwise_permutation_rounds=1000,
     multistage_sample_n=10,       # STANDARD/DEEP_PROBE default; EXTENDED uses 12
+    multistage_model_strategy="top_bottom",  # "top_bottom", "all", "single_model"
+    multistage_max_models=5,
+    model_call_retries=1,
+    judge_call_retries=0,
 
     # ── Time Budget ──
     timeout_per_model=10800,  # Max seconds per model (default: 3h)
@@ -263,6 +297,8 @@ RunConfig(
 
     # ── Output ──
     output_dir="prometheus_output",
+    final_output_basename="Final_Output_main",
+    agi_metacog_target_score=0.85,
 
     # ── Feature Flags ──
     run_probes=True,          # Epoch-2 adversarial probes
@@ -348,8 +384,9 @@ prometheus-ebm-sdk/
 │   ├── taxonomy.py          # 4-class solvability taxonomy
 │   ├── scorer.py            # ECI, HGI, Brier, D-Prime
 │   ├── runner.py            # Benchmark orchestrator
+│   ├── workflow_v5.py       # Notebook-parity helper entrypoints
 │   ├── research_grade.py    # RG02-RG07 artifact pipeline
-│   ├── data/                # Bundled defaults (200, 1000, probe files)
+│   ├── data/                # 1000 (Individual) and 200 (Multimodel) datasets
 │   └── providers/
 │       ├── kaggle.py        # Kaggle kbench adapter
 │       ├── openrouter.py    # OpenRouter API adapter
@@ -374,7 +411,7 @@ prometheus-ebm-sdk/
 | **v0.2.0** | ✅ Shipped | Full evaluation loop, stress augmentation engine, core export pipeline |
 | **v0.3.0** | ✅ Shipped | V5 parity exports: RG artifacts, contamination audit, gate/card bundle |
 | **v0.3.1** | ✅ Shipped | Lab usability patch: Groq/OpenAI-compatible flow, runner compatibility aliases |
-| **v0.4.0** | Planned | CLI parity for research-grade workflows and optional richer HTML reports |
+| **v0.4.0** | ✅ Shipped | Notebook V5 parity runtime contract, custom endpoint routing, final-output parity exports, independent lab workflow helpers |
 
 ---
 

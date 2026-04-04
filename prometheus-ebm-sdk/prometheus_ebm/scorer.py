@@ -58,6 +58,22 @@ class ECIScorer:
     }
     
     @staticmethod
+    def compute_hgi(confidences: List[float], correctness: List[bool], 
+                    solvability_correct: List[bool]) -> float:
+        """
+        Hysteresis Gap Index: measures internal inconsistency.
+        HGI = mean(abs(conf - (is_correct + solv_ok)/2.0))
+        """
+        if not confidences:
+            return 0.0
+        
+        gaps = [
+            abs(float(c) - (float(corr) + float(solv)) / 2.0)
+            for c, corr, solv in zip(confidences, correctness, solvability_correct)
+        ]
+        return float(np.mean(gaps))
+    
+    @staticmethod
     def compute_sda(predicted_classes: List[str], true_classes: List[str]) -> float:
         """Solvability Detection Accuracy: fraction of correct class predictions."""
         if not predicted_classes:
@@ -108,17 +124,45 @@ class ECIScorer:
         return ece
     
     @staticmethod
-    def compute_hss(predicted_classes: List[str], true_classes: List[str],
-                    answers_given: List[bool]) -> float:
-        """Hallucination Sensitivity Score: fabricating answers to unsolvable problems."""
-        unsolvable_indices = [i for i, t in enumerate(true_classes) 
-                             if t and t.upper() != "DETERMINATE"]
-        if not unsolvable_indices:
+    def compute_hss(
+        answers_correct: List[bool],
+        true_classes: List[str],
+        confidences: Optional[List[float]] = None,
+        confidence_threshold: float = 0.6,
+        include_underdetermined: bool = False,
+    ) -> float:
+        """
+        Hallucination Sensitivity Score for impossible tasks.
+
+        Notebook V5 parity path (when confidences are provided):
+            hss = mean(incorrect AND confidence > threshold) on impossible classes.
+
+        Backward-compatible path (no confidences):
+            hss = 1 - mean(is_correct) on impossible classes.
+        """
+        impossible_labels = {"INSUFFICIENT", "CONTRADICTORY"}
+        if include_underdetermined:
+            impossible_labels.add("UNDERDETERMINED")
+
+        impossible_idx = [
+            i for i, t in enumerate(true_classes)
+            if t and str(t).upper() in impossible_labels and i < len(answers_correct)
+        ]
+        if not impossible_idx:
             return 0.0
-        hallucinations = sum(1 for i in unsolvable_indices 
-                           if answers_given[i] and predicted_classes[i] 
-                           and predicted_classes[i].upper() == "DETERMINATE")
-        return hallucinations / len(unsolvable_indices)
+
+        if confidences is None:
+            correct_on_impossible = sum(1 for i in impossible_idx if bool(answers_correct[i]))
+            return 1.0 - (correct_on_impossible / len(impossible_idx))
+
+        high_conf_incorrect = 0
+        for i in impossible_idx:
+            if i >= len(confidences):
+                continue
+            if (not bool(answers_correct[i])) and float(confidences[i]) > confidence_threshold:
+                high_conf_incorrect += 1
+
+        return float(high_conf_incorrect) / float(len(impossible_idx))
     
     def compute_eci(self, sda: float, ca: float, rp: float, 
                     ece: float, hss: float) -> float:

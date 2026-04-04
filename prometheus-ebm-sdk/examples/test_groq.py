@@ -20,7 +20,7 @@ def main() -> None:
 
     config = RunConfig(
         mode="standard",
-        models=["llama-3.1-70b-versatile"],
+        models=["llama-3.3-70b-versatile"],
         provider="openai",
         api_key=api_key,
         api_base_url="https://api.groq.com/openai/v1",
