@@ -4,13 +4,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)]()
 
-**Benchmarking Epistemic Metacognition in AI Models**
+**Benchmarking Epistemic Metacognition in AI Models — Python SDK Edition**
 
 PROMETHEUS-EBM evaluates whether frontier AI models can recognize the *limits of their own knowledge* — not just answer questions, but understand when a question is unanswerable, ambiguous, or self-contradictory.
 
-> **Companion to the V5 notebook protocol:** This SDK now mirrors the `Final_V5.ipynb` artifact contract for standalone, reproducible lab runs.
+> **Seamless Companion to the V5 Research Protocol:** This standalone SDK perfectly mirrors the `Final_V5.ipynb` core artifact, unlocking standard workflows and reproducible runs for independent AI labs. Top-tier AI labs can now effortlessly plug-and-play this SDK to benchmark Epistemic Metacognition in their proprietary models with zero friction.
 
-Independent lab run guide: [INDEPENDENT_LAB_RUN_GUIDE.md](INDEPENDENT_LAB_RUN_GUIDE.md)
+🚀 **Independent Lab Guide:** [INDEPENDENT_LAB_RUN_GUIDE.md](INDEPENDENT_LAB_RUN_GUIDE.md)
 
 ---
 
