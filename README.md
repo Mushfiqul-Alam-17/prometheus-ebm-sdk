@@ -8,7 +8,9 @@
 
 PROMETHEUS-EBM evaluates whether frontier AI models can recognize the *limits of their own knowledge* — not just answer questions, but understand when a question is unanswerable, ambiguous, or self-contradictory.
 
-> **Companion to the Kaggle notebook:** [PROMETHEUS-EBM v5.0](https://www.kaggle.com/code/mushfiqulalam007/final-bm-v4) — The full benchmark with live results from 5 frontier models.
+> **Companion to the V5 notebook protocol:** This SDK now mirrors the `Final_V5.ipynb` artifact contract for standalone, reproducible lab runs.
+
+Independent lab run guide: [INDEPENDENT_LAB_RUN_GUIDE.md](INDEPENDENT_LAB_RUN_GUIDE.md)
 
 ---
 
@@ -70,15 +72,26 @@ pip install "prometheus-ebm[all]"         # All providers
 
 ---
 
+## Dataset Navigation (V5 Lab Standard)
+
+To ensure consistency with the `Final_V5.ipynb` research protocol, the SDK uses a tiered data structure:
+
+- **Individual Model Testing** (`mode="deep_probe"`): Uses the **1,000-item Master Set** (`prometheus_1000_dataset.json`). Optimized for deep statistical significance on a single model.
+- **Multi-model Comparison** (`mode="compare"`/`"standard"`): Uses the **200-item Leaderboard Subset** (`prometheus_200_multimodel_dataset.json`). Optimized for rapid benchmarking across multiple model families.
+
+The SDK automatically selects the appropriate file based on your `mode`, but you can always override this by providing a custom `dataset_path`.
+
+---
+
 ## Quick Start
 
 ### Compare Multiple Models
 
 ```python
-from prometheus_ebm import PrometheusRunner, RunConfig
+from prometheus_ebm import build_v5_config, run_v5_workflow
 
-config = RunConfig(
-    mode="compare",
+config = build_v5_config(
+    mode="extended",
     models=[
         "anthropic/claude-opus-4-6@default",
         "anthropic/claude-sonnet-4-6@default",
@@ -92,9 +105,7 @@ config = RunConfig(
     stress_clarity_ratio=0.20,
 )
 
-runner = PrometheusRunner(config)
-results = runner.run()
-results.export("comparison.csv")
+results = run_v5_workflow(config, export_bundle=True)
 ```
 
 ### Deep Probe a Single Model (1,000 Items)
@@ -134,7 +145,71 @@ config = RunConfig(
     models=["gpt-5.4"],
     provider="openai",
     api_key="sk-...",
-    n_items=200,
+    n_items=1000,
+)
+```
+
+### Test with Groq (OpenAI-Compatible)
+
+The OpenAI adapter supports custom endpoints, so you can route calls to Groq.
+
+```python
+import os
+from prometheus_ebm import OpenAIProvider, PrometheusRunner, RunConfig
+
+api_key = os.getenv("OPENAI_API_KEY")
+provider = OpenAIProvider(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+
+config = RunConfig(
+    mode="standard",
+    models=["llama-3.1-70b-versatile"],
+    provider="openai",
+    api_key=api_key,
+    api_base_url="https://api.groq.com/openai/v1",
+    n_items=10,
+    run_probes=True,
+    run_multistage=False,
+    run_statistics=True,
+)
+
+runner = PrometheusRunner(config=config, provider=provider)
+results = runner.run_all()  # alias of run()
+results.export("zip")
+```
+
+See `examples/test_groq.py` for a complete runnable example.
+
+### Use Your Own OpenAI-Compatible Endpoint
+
+`provider="custom"` routes through the OpenAI adapter with your `api_base_url`, which is useful for local gateways, enterprise routers, and lab-hosted endpoints.
+
+```python
+from prometheus_ebm import RunConfig, PrometheusRunner
+
+config = RunConfig(
+    mode="standard",
+    models=["your-lab-model"],
+    provider="custom",
+    api_key="sk-your-key",
+    api_base_url="https://your.endpoint.example/v1",
+)
+
+results = PrometheusRunner(config).run()
+```
+
+### Using Custom Datasets
+
+The SDK comes bundled with 4 default datasets out of the box (the full 1,000-item deep probe, the 200-item standard, the ambiguity probe, and the contradiction probe). 
+
+If you want to evaluate models on your own specialized dataset, format your test array as a JSON file matching the 4-class taxonomy, and pass the path directly to the `RunConfig`:
+
+```python
+config = RunConfig(
+    mode="standard",
+    models=["anthropic/claude-opus-4-6"],
+    provider="anthropic",
+    api_key="sk-...",
+    dataset_path="c:/path/to/your/custom_dataset.json" # Overrides the defaults
 )
 ```
 
@@ -152,7 +227,7 @@ sda = ECIScorer.compute_sda(predicted_classes, true_classes)
 ca  = ECIScorer.compute_ca(answers_correct, true_classes)
 rp  = ECIScorer.compute_rp(predicted_classes, true_classes)
 ece = ECIScorer.compute_ece(confidences, correctness)
-hss = ECIScorer.compute_hss(predicted_classes, true_classes, answers_given)
+hss = ECIScorer.compute_hss(answers_correct, true_classes, confidences)
 
 eci = scorer.compute_eci(sda, ca, rp, ece, hss)
 
@@ -175,6 +250,7 @@ dprime = Type2DPrime.compute(confidences, correctness, threshold=0.7)
 | `openrouter` | Yes | 100+ | Broadest model access with one key |
 | `anthropic` | Yes | Claude family | Direct Anthropic API access |
 | `openai` | Yes | GPT family | Direct OpenAI API access |
+| `custom` | Yes | OpenAI-compatible endpoints | Self-hosted/lab APIs via custom base URL |
 
 **Default behavior:** If no API key is provided, the SDK falls back to the Kaggle provider (which requires no authentication when running inside a Kaggle notebook).
 
@@ -185,13 +261,13 @@ dprime = Type2DPrime.compute(confidences, correctness, threshold=0.7)
 ```python
 RunConfig(
     # ── Mode ──
-    mode="compare",           # "compare" (multi-model) or "deep_probe" (single-model)
+    mode="standard",          # "standard", "extended", "deep_probe" ("compare" alias is still supported)
     models=[...],             # List of model identifiers
 
     # ── Provider ──
-    provider="kaggle",        # "kaggle", "openrouter", "anthropic", "openai"
+    provider="kaggle",        # "kaggle", "openrouter", "anthropic", "openai", "custom"
     api_key=None,             # Required for non-Kaggle providers
-    api_base_url=None,        # Custom API endpoint (for self-hosted models)
+    api_base_url=None,        # Required when provider="custom"
 
     # ── Dataset ──
     n_items=200,              # Base problem count (200 standard, 1000 for deep probe)
@@ -200,8 +276,15 @@ RunConfig(
     stress_clarity_ratio=0.10,   # Fraction with reduced-clarity variants
 
     # ── Statistical ──
-    seeds=["s1", "s2"],       # Reproducibility seeds for bootstrap
-    bootstrap_iterations=2000, # Bootstrap iterations for CIs
+    seeds=["s1", "s2", "s3"],    # Epoch-1 resampling seeds
+    probe_seeds=["p1", "p2", "p3"], # Epoch-2 resampling seeds
+    bootstrap_iterations=3000,    # Bootstrap iterations for CIs
+    pairwise_permutation_rounds=1000,
+    multistage_sample_n=10,       # STANDARD/DEEP_PROBE default; EXTENDED uses 12
+    multistage_model_strategy="top_bottom",  # "top_bottom", "all", "single_model"
+    multistage_max_models=5,
+    model_call_retries=1,
+    judge_call_retries=0,
 
     # ── Time Budget ──
     timeout_per_model=10800,  # Max seconds per model (default: 3h)
@@ -214,13 +297,53 @@ RunConfig(
 
     # ── Output ──
     output_dir="prometheus_output",
+    final_output_basename="Final_Output_main",
+    agi_metacog_target_score=0.85,
 
     # ── Feature Flags ──
     run_probes=True,          # Epoch-2 adversarial probes
     run_multistage=True,      # Multi-stage belief revision protocol
     run_statistics=True,      # Bootstrap CIs and significance tests
+    run_research_grade_blocks=True,
+    run_independent_judge_sensitivity=False, # Optional (API-costly) criterion
     verbose=True,             # Print progress
 )
+```
+
+---
+
+## V5 Parity and Standalone Labs
+
+The SDK export pipeline now writes the same research-grade families used in `Final_V5.ipynb`, including:
+
+- Epoch-1 bundle artifacts (`prometheus_item_level_results.*`, `prometheus_model_comparison.*`, `prometheus_results_export.zip`)
+- Epoch-2 probe and multi-stage artifacts (`probe_results.csv`, `multistage_results.csv`, `prometheus_epoch2_export.zip`)
+- RG artifacts (`rg_epoch1_*`, `rg_epoch2_*`, contamination audit, judge sensitivity report)
+- Final gate/card artifacts (`research_grade_v1_gate.json`, `research_grade_v1_gate_criteria.csv`, `benchmark_card_research_grade_v1.md`)
+- Master archive (`prometheus_FINAL_submission.zip`) included inside the exported zip
+
+Minimal standalone flow for independent labs:
+
+```python
+from prometheus_ebm import PrometheusRunner, RunConfig
+
+config = RunConfig(
+    mode="extended",
+    models=[
+        "google/gemini-3.1-pro-preview",
+        "anthropic/claude-opus-4-6@default",
+        "anthropic/claude-sonnet-4-6@default",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek-ai/deepseek-r1-0528",
+    ],
+    provider="kaggle",
+    run_multistage=True,
+    run_research_grade_blocks=True,
+)
+
+runner = PrometheusRunner(config)
+results = runner.run()
+results.export("prometheus_sdk_v5_bundle.zip")
 ```
 
 ---
@@ -261,7 +384,9 @@ prometheus-ebm-sdk/
 │   ├── taxonomy.py          # 4-class solvability taxonomy
 │   ├── scorer.py            # ECI, HGI, Brier, D-Prime
 │   ├── runner.py            # Benchmark orchestrator
-│   ├── data/                # Bundled dataset (200 problems)
+│   ├── workflow_v5.py       # Notebook-parity helper entrypoints
+│   ├── research_grade.py    # RG02-RG07 artifact pipeline
+│   ├── data/                # 1000 (Individual) and 200 (Multimodel) datasets
 │   └── providers/
 │       ├── kaggle.py        # Kaggle kbench adapter
 │       ├── openrouter.py    # OpenRouter API adapter
@@ -282,10 +407,11 @@ prometheus-ebm-sdk/
 
 | Version | Status | Features |
 |---------|--------|----------|
-| **v0.1.0** | ✅ Current | Scorer (ECI, Brier, D-Prime), Taxonomy, Config, Provider adapters |
-| **v0.2.0** | Planned | Full evaluation loop, stress augmentation engine, export pipeline |
-| **v0.3.0** | Planned | Bootstrap CI, pairwise significance, contamination audit |
-| **v1.0.0** | Planned | 1,000-item dataset, CLI tool, HTML report generator |
+| **v0.1.0** | ✅ Shipped | Scorer (ECI, Brier, D-Prime), Taxonomy, Config, Provider adapters |
+| **v0.2.0** | ✅ Shipped | Full evaluation loop, stress augmentation engine, core export pipeline |
+| **v0.3.0** | ✅ Shipped | V5 parity exports: RG artifacts, contamination audit, gate/card bundle |
+| **v0.3.1** | ✅ Shipped | Lab usability patch: Groq/OpenAI-compatible flow, runner compatibility aliases |
+| **v0.4.0** | ✅ Shipped | Notebook V5 parity runtime contract, custom endpoint routing, final-output parity exports, independent lab workflow helpers |
 
 ---
 

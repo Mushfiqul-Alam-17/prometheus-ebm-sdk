@@ -26,6 +26,11 @@ config = RunConfig(
         "prometheus-2026-deep-s2",
         "prometheus-2026-deep-s3",  # More seeds for tighter CIs
     ],
+    probe_seeds=[
+        "prometheus-2026-deep-p1",
+        "prometheus-2026-deep-p2",
+        "prometheus-2026-deep-p3",
+    ],
     bootstrap_iterations=5000,     # More iterations for precision
     
     # Runtime
@@ -39,7 +44,7 @@ config.validate()
 # Run the deep probe
 # runner = PrometheusRunner(config)
 # results = runner.run()
-# results.export("opus_deep_probe_report.html")
+# results.export("opus_deep_probe_bundle.zip")
 
 print("\n[Note: Uncomment the runner lines above to execute the deep probe]")
 print("[Warning: A 1,000-item probe costs approximately $150-$300 in API fees]")

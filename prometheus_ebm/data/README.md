@@ -4,7 +4,7 @@ The PROMETHEUS-EBM benchmark dataset consists of 200 curated problems across 5 p
 
 ## Structure
 
-Each problem in `prometheus_real_dataset.json` contains:
+Each problem in `prometheus_200_multimodel_dataset.json` contains:
 
 ```json
 {
