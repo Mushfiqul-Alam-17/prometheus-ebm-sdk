@@ -1,63 +1,39 @@
-# Environments
-.env
-.venv/
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Environment Variables
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# API keys and secrets
-*api_key*
-*secret*
-
-# IDEs and Editors
-.idea/
-.vscode/
-*.swp
-*.swo
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+*.py[cod]
+*$py.class
+*.so
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
-MANIFEST
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Virtual environments
+.venv/
+venv/
+env/
 
-# Build / Output Artifacts
-*.zip
-*.tar
-*.gz
-*.tar.gz
-*.log
-*.sqlite3
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Windows
+# OS
+.DS_Store
 Thumbs.db
-Desktop.ini
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution
+*.whl
+*.tar.gz
+
+# PROMETHEUS-EBM Outputs
+prometheus_output/
+prometheus_checkpoints/
+git_files.txt

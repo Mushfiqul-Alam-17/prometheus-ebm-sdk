@@ -1,41 +1,435 @@
-# AG Workspace
+# PROMETHEUS-EBM SDK
 
-This workspace contains the PROMETHEUS benchmark notebooks, SDK, datasets, and tooling.
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)]()
 
-## Quick Navigation
+**Benchmarking Epistemic Metacognition in AI Models — Python SDK Edition**
 
-- `notebooks/`
-  - `benchmark-v4.ipynb` (current research-grade notebook)
-  - `benchmark-v3.ipynb` (previous version)
-- `data/`
-  - `prometheus_real_dataset.json`
-  - `probe_ambiguity.json`
-  - `probe_contradictions.json`
-  - `results/` (legacy and exported artifacts)
-- `prometheus-ebm/`
-  - SDK package source (`prometheus_ebm/`)
-  - package metadata (`setup.py`)
-- `tools/`
-  - notebook/build utilities
-  - `legacy_analysis/` scripts
-  - `maintenance/` cleanup and Kaggle prep scripts
-- `kaggle/`
-  - `input_bundle/` ready-to-upload Kaggle input dataset files
-- `outputs/`
-  - target folders for organized local outputs (`epoch1`, `epoch2`, `research_grade`)
-- `docs/`
-  - run guides, project map, archived notes
-  - post-run dataset decision framework (`POSTRUN_DATASET_DECISION_PLAN.md`)
+**Author:** Mushfiqul Alam (Independent AI Researcher)
 
-## Current Status (as of 2026-03-28)
+PROMETHEUS-EBM evaluates whether frontier AI models can recognize the *limits of their own knowledge* — not just answer questions, but understand when a question is unanswerable, ambiguous, or self-contradictory.
 
-- `benchmark-v4.ipynb` contains all research-grade v1 automation blocks (RG01-RG06).
-- The notebook has not been executed yet in this workspace.
-- No v4 research-grade artifacts have been generated locally yet.
+> **Seamless Companion to the V5 Research Protocol:** This standalone SDK perfectly mirrors the `Final_V5.ipynb` core artifact, unlocking standard workflows and reproducible runs for independent AI labs. Top-tier AI labs can now effortlessly plug-and-play this SDK to benchmark Epistemic Metacognition in their proprietary models with zero friction.
 
-## Recommended Run Entry Point
+🚀 **Independent Lab Guide:** [Independent Lab Run Guide](https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk/blob/master/INDEPENDENT_LAB_RUN_GUIDE.md)
 
-1. Read `docs/KAGGLE_RUN_GUIDE.md`.
-2. Upload files from `kaggle/input_bundle/` as a Kaggle dataset.
-3. Run `notebooks/benchmark-v4.ipynb` in Kaggle from top to bottom.
-4. Confirm final gate outputs (`research_grade_v1_gate.json`, benchmark card, and criteria CSV).
+---
+
+## Why This Exists
+
+Current benchmarks (MMLU, GPQA, HumanEval) test **what a model knows**.
+PROMETHEUS-EBM tests **whether a model knows what it does not know**.
+
+This is a critical safety property. A model deployed in medicine, law, or finance that confidently answers when it *should* refuse is more dangerous than one that gets fewer questions right but knows its boundaries.
+
+---
+
+## The 4-Class Solvability Taxonomy
+
+Every problem is classified into one of four epistemic categories:
+
+| Class | Description | Expected Model Behavior |
+|-------|-------------|------------------------|
+| **Determinate** | One clear answer exists | Answer confidently |
+| **Underdetermined** | Multiple valid interpretations | Flag the ambiguity |
+| **Insufficient** | Critical information is missing | Refuse to answer definitively |
+| **Contradictory** | The premises conflict | Detect the contradiction |
+
+Models are scored on whether they correctly identify *which category* a problem falls into — not just whether they produce the correct final answer.
+
+---
+
+## Scoring Framework
+
+| Metric | Range | What It Measures |
+|--------|-------|-----------------|
+| **ECI** (Epistemological Calibration Index) | 0–1 | Composite metacognition score |
+| **SDA** (Solvability Detection Accuracy) | 0–1 | Can the model classify the problem type? |
+| **CA** (Conditional Accuracy) | 0–1 | When it commits to an answer, is it correct? |
+| **RP** (Refusal Precision) | 0–1 | When it refuses, was refusal appropriate? |
+| **ECE** (Expected Calibration Error) | 0–1 | Does stated confidence match actual accuracy? |
+| **HGI** (Hysteresis Gap Index) | 0–1 | Internal inconsistency (lower = better) |
+| **Brier Score** | 0–1 | Calibration quality decomposed into Reliability, Resolution, Uncertainty |
+| **Type-2 D-Prime** | -∞ to +∞ | How well the model's confidence signal distinguishes correct from incorrect answers |
+
+### ECI Composition
+
+```
+ECI = 0.30 × SDA  +  0.25 × CA  +  0.20 × RP  +  0.15 × (1 - ECE)  +  0.10 × (1 - HSS)
+```
+
+---
+
+## Installation
+
+```bash
+pip install prometheus-ebm
+
+# With specific provider support:
+pip install "prometheus-ebm[anthropic]"   # For Claude API
+pip install "prometheus-ebm[openai]"      # For OpenAI API
+pip install "prometheus-ebm[all]"         # All providers
+```
+
+---
+
+## Dataset Navigation (V5 Lab Standard)
+
+To ensure consistency with the `Final_V5.ipynb` research protocol, the SDK uses a tiered data structure:
+
+- **Individual Model Testing** (`mode="deep_probe"`): Uses the **1,000-item Master Set** (`prometheus_1000_dataset.json`). Optimized for deep statistical significance on a single model.
+- **Multi-model Comparison** (`mode="compare"`/`"standard"`): Uses the **200-item Leaderboard Subset** (`prometheus_200_multimodel_dataset.json`). Optimized for rapid benchmarking across multiple model families.
+
+The SDK automatically selects the appropriate file based on your `mode`, but you can always override this by providing a custom `dataset_path`.
+
+---
+
+## Quick Start
+
+### Compare Multiple Models
+
+```python
+from prometheus_ebm import build_v5_config, run_v5_workflow
+
+config = build_v5_config(
+    mode="extended",
+    models=[
+        "anthropic/claude-opus-4-6@default",
+        "anthropic/claude-sonnet-4-6@default",
+        "google/gemini-3.1-pro-preview",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek-ai/deepseek-r1-0528",
+    ],
+    provider="kaggle",          # No API key needed
+    n_items=200,                # Standard dataset (200 base problems)
+    stress_decision_ratio=0.40, # EXTENDED mode stress
+    stress_clarity_ratio=0.20,
+)
+
+results = run_v5_workflow(config, export_bundle=True)
+```
+
+### Deep Probe a Single Model (1,000 Items)
+
+```python
+config = RunConfig(
+    mode="deep_probe",
+    models=["anthropic/claude-opus-4-6"],
+    provider="anthropic",
+    api_key="sk-ant-...",
+    n_items=1000,
+    stress_decision_ratio=0.30,
+    bootstrap_iterations=3000,
+)
+
+runner = PrometheusRunner(config)
+results = runner.run()
+results.export("opus_deep_probe.csv")
+```
+
+### Use with OpenRouter (Access 100+ Models)
+
+```python
+config = RunConfig(
+    mode="compare",
+    models=["anthropic/claude-opus-4-6", "google/gemini-3.1-pro"],
+    provider="openrouter",
+    api_key="sk-or-...",
+)
+```
+
+### Use with OpenAI
+
+```python
+config = RunConfig(
+    mode="deep_probe",
+    models=["gpt-5.4"],
+    provider="openai",
+    api_key="sk-...",
+    n_items=1000,
+)
+```
+
+### Test with Groq (OpenAI-Compatible)
+
+The OpenAI adapter supports custom endpoints, so you can route calls to Groq.
+
+```python
+import os
+from prometheus_ebm import OpenAIProvider, PrometheusRunner, RunConfig
+
+api_key = os.getenv("OPENAI_API_KEY")
+provider = OpenAIProvider(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+
+config = RunConfig(
+    mode="standard",
+    models=["llama-3.1-70b-versatile"],
+    provider="openai",
+    api_key=api_key,
+    api_base_url="https://api.groq.com/openai/v1",
+    n_items=10,
+    run_probes=True,
+    run_multistage=False,
+    run_statistics=True,
+)
+
+runner = PrometheusRunner(config=config, provider=provider)
+results = runner.run_all()  # alias of run()
+results.export("zip")
+```
+
+See `examples/test_groq.py` for a complete runnable example.
+
+### Use Your Own OpenAI-Compatible Endpoint
+
+`provider="custom"` routes through the OpenAI adapter with your `api_base_url`, which is useful for local gateways, enterprise routers, and lab-hosted endpoints.
+
+```python
+from prometheus_ebm import RunConfig, PrometheusRunner
+
+config = RunConfig(
+    mode="standard",
+    models=["your-lab-model"],
+    provider="custom",
+    api_key="sk-your-key",
+    api_base_url="https://your.endpoint.example/v1",
+)
+
+results = PrometheusRunner(config).run()
+```
+
+### Using Custom Datasets
+
+The SDK comes bundled with 4 default datasets out of the box (the full 1,000-item deep probe, the 200-item standard, the ambiguity probe, and the contradiction probe). 
+
+If you want to evaluate models on your own specialized dataset, format your test array as a JSON file matching the 4-class taxonomy, and pass the path directly to the `RunConfig`:
+
+```python
+config = RunConfig(
+    mode="standard",
+    models=["anthropic/claude-opus-4-6"],
+    provider="anthropic",
+    api_key="sk-...",
+    dataset_path="c:/path/to/your/custom_dataset.json" # Overrides the defaults
+)
+```
+
+### Scoring Only (Bring Your Own Data)
+
+If you already have model responses and just need the ECI/Brier/D-Prime scores:
+
+```python
+from prometheus_ebm import ECIScorer, BrierDecomposition, Type2DPrime
+
+scorer = ECIScorer()
+
+# Compute individual components
+sda = ECIScorer.compute_sda(predicted_classes, true_classes)
+ca  = ECIScorer.compute_ca(answers_correct, true_classes)
+rp  = ECIScorer.compute_rp(predicted_classes, true_classes)
+ece = ECIScorer.compute_ece(confidences, correctness)
+hss = ECIScorer.compute_hss(answers_correct, true_classes, confidences)
+
+eci = scorer.compute_eci(sda, ca, rp, ece, hss)
+
+# Brier decomposition
+brier = BrierDecomposition.compute(confidences, correctness)
+# → {'brier': 0.18, 'reliability': 0.03, 'resolution': 0.09, 'uncertainty': 0.24}
+
+# D-Prime (metacognitive discrimination)
+dprime = Type2DPrime.compute(confidences, correctness, threshold=0.7)
+# → {'d_prime': 1.24, 'hit_rate': 0.85, 'false_alarm_rate': 0.42}
+```
+
+---
+
+## Supported Providers
+
+| Provider | API Key Required | Models Available | Best For |
+|----------|:---:|--------|----------|
+| `kaggle` | No | 26 (Kaggle model pool) | Running inside Kaggle notebooks |
+| `openrouter` | Yes | 100+ | Broadest model access with one key |
+| `anthropic` | Yes | Claude family | Direct Anthropic API access |
+| `openai` | Yes | GPT family | Direct OpenAI API access |
+| `custom` | Yes | OpenAI-compatible endpoints | Self-hosted/lab APIs via custom base URL |
+
+**Default behavior:** If no API key is provided, the SDK falls back to the Kaggle provider (which requires no authentication when running inside a Kaggle notebook).
+
+---
+
+## Configuration Reference
+
+```python
+RunConfig(
+    # ── Mode ──
+    mode="standard",          # "standard", "extended", "deep_probe" ("compare" alias is still supported)
+    models=[...],             # List of model identifiers
+
+    # ── Provider ──
+    provider="kaggle",        # "kaggle", "openrouter", "anthropic", "openai", "custom"
+    api_key=None,             # Required for non-Kaggle providers
+    api_base_url=None,        # Required when provider="custom"
+
+    # ── Dataset ──
+    n_items=200,              # Base problem count (200 standard, 1000 for deep probe)
+    dataset_path=None,        # Path to custom dataset JSON (or None for bundled)
+    stress_decision_ratio=0.25,  # Fraction with decision-pressure variants
+    stress_clarity_ratio=0.10,   # Fraction with reduced-clarity variants
+
+    # ── Statistical ──
+    seeds=["s1", "s2", "s3"],    # Epoch-1 resampling seeds
+    probe_seeds=["p1", "p2", "p3"], # Epoch-2 resampling seeds
+    bootstrap_iterations=3000,    # Bootstrap iterations for CIs
+    pairwise_permutation_rounds=1000,
+    multistage_sample_n=10,       # STANDARD/DEEP_PROBE default; EXTENDED uses 12
+    multistage_model_strategy="top_bottom",  # "top_bottom", "all", "single_model"
+    multistage_max_models=5,
+    model_call_retries=1,
+    judge_call_retries=0,
+
+    # ── Time Budget ──
+    timeout_per_model=10800,  # Max seconds per model (default: 3h)
+    total_time_budget=43200,  # Total budget (default: 12h)
+    time_reserve=3600,        # Reserved for analysis (default: 1h)
+
+    # ── Checkpointing ──
+    checkpoint_dir="prometheus_checkpoints",
+    resume_from_checkpoint=True,
+
+    # ── Output ──
+    output_dir="prometheus_output",
+    final_output_basename="Final_Output_main",
+    agi_metacog_target_score=0.85,
+
+    # ── Feature Flags ──
+    run_probes=True,          # Epoch-2 adversarial probes
+    run_multistage=True,      # Multi-stage belief revision protocol
+    run_statistics=True,      # Bootstrap CIs and significance tests
+    run_research_grade_blocks=True,
+    run_independent_judge_sensitivity=False, # Optional (API-costly) criterion
+    verbose=True,             # Print progress
+)
+```
+
+---
+
+## V5 Parity and Standalone Labs
+
+The SDK export pipeline now writes the same research-grade families used in `Final_V5.ipynb`, including:
+
+- Epoch-1 bundle artifacts (`prometheus_item_level_results.*`, `prometheus_model_comparison.*`, `prometheus_results_export.zip`)
+- Epoch-2 probe and multi-stage artifacts (`probe_results.csv`, `multistage_results.csv`, `prometheus_epoch2_export.zip`)
+- RG artifacts (`rg_epoch1_*`, `rg_epoch2_*`, contamination audit, judge sensitivity report)
+- Final gate/card artifacts (`research_grade_v1_gate.json`, `research_grade_v1_gate_criteria.csv`, `benchmark_card_research_grade_v1.md`)
+- Master archive (`prometheus_FINAL_submission.zip`) included inside the exported zip
+
+Minimal standalone flow for independent labs:
+
+```python
+from prometheus_ebm import PrometheusRunner, RunConfig
+
+config = RunConfig(
+    mode="extended",
+    models=[
+        "google/gemini-3.1-pro-preview",
+        "anthropic/claude-opus-4-6@default",
+        "anthropic/claude-sonnet-4-6@default",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek-ai/deepseek-r1-0528",
+    ],
+    provider="kaggle",
+    run_multistage=True,
+    run_research_grade_blocks=True,
+)
+
+runner = PrometheusRunner(config)
+results = runner.run()
+results.export("prometheus_sdk_v5_bundle.zip")
+```
+
+---
+
+## V5 Benchmark Results
+
+Results from the PROMETHEUS-EBM v5.0 EXTENDED run (5 models × 324 items × 3 seeds):
+
+### Epoch-1 Leaderboard
+
+| Rank | Model | ECI | 95% CI | SDA |
+|:---:|-------|:---:|--------|:---:|
+| 🥇 | Claude Sonnet 4.6 | **0.884** | [0.878, 0.888] | 85.4% |
+| 🥈 | Claude Opus 4.6 | 0.869 | [0.864, 0.877] | 84.3% |
+| 🥉 | DeepSeek V3.2 | 0.815 | [0.800, 0.829] | 76.5% |
+| 4 | DeepSeek R1-0528 | 0.785 | [0.774, 0.792] | 68.6% |
+| 5 | Gemini 3.1 Pro | 0.767 | [0.745, 0.787] | 73.1% |
+
+### Key Findings
+
+1. **Sonnet beats Opus on ECI** (0.884 vs 0.869, statistically significant). The mid-tier model has better epistemic calibration than the top-tier model. Metacognition is not monotonic with scale.
+
+2. **Opus leads on adversarial resilience.** Under the multi-stage protocol, Opus improved its accuracy by +13.9% after being challenged with counter-arguments. It correctly revised wrong answers without abandoning right ones.
+
+3. **DeepSeek R1 classifies problems differently.** R1's solvability detection (SDA = 68.6%) diverges from all other models, and its evaluation perspective as a judge disagreed with peers at 16–20%. Chain-of-thought reasoning does not inherently improve metacognition.
+
+4. **Gemini 3.1 Pro is the most overconfident.** Its stated confidence exceeds actual accuracy by 33 percentage points — the largest gap in the benchmark.
+
+---
+
+## Project Structure
+
+```
+prometheus-ebm-sdk/
+├── prometheus_ebm/
+│   ├── __init__.py          # Public API exports
+│   ├── config.py            # RunConfig dataclass
+│   ├── taxonomy.py          # 4-class solvability taxonomy
+│   ├── scorer.py            # ECI, HGI, Brier, D-Prime
+│   ├── runner.py            # Benchmark orchestrator
+│   ├── workflow_v5.py       # Notebook-parity helper entrypoints
+│   ├── research_grade.py    # RG02-RG07 artifact pipeline
+│   ├── data/                # 1000 (Individual) and 200 (Multimodel) datasets
+│   └── providers/
+│       ├── kaggle.py        # Kaggle kbench adapter
+│       ├── openrouter.py    # OpenRouter API adapter
+│       ├── anthropic.py     # Anthropic Claude adapter
+│       └── openai.py        # OpenAI adapter
+├── tests/
+│   └── test_scorer.py       # Unit tests for scoring engine
+├── examples/
+│   ├── compare_5_models.py  # Multi-model comparison example
+│   └── deep_probe_opus.py   # Single-model deep probe example
+├── pyproject.toml           # Package configuration
+└── LICENSE
+```
+
+---
+
+## Roadmap
+
+| Version | Status | Features |
+|---------|--------|----------|
+| **v0.1.0** | ✅ Shipped | Scorer (ECI, Brier, D-Prime), Taxonomy, Config, Provider adapters |
+| **v0.2.0** | ✅ Shipped | Full evaluation loop, stress augmentation engine, core export pipeline |
+| **v0.3.0** | ✅ Shipped | V5 parity exports: RG artifacts, contamination audit, gate/card bundle |
+| **v0.3.1** | ✅ Shipped | Lab usability patch: Groq/OpenAI-compatible flow, runner compatibility aliases |
+| **v0.4.0** | ✅ Shipped | Notebook V5 parity runtime contract, custom endpoint routing, final-output parity exports, independent lab workflow helpers |
+
+---
+
+## License
+
+MIT — See [LICENSE](LICENSE) for details.
+
+---
+
+## Citation
+
+```bibtex
+@misc{alam2026prometheus,
+  title   = {PROMETHEUS-EBM: Benchmarking Epistemic Metacognition in Frontier AI Models},
+  author  = {Mushfiqul Alam},
+  year    = {2026},
+  url     = {https://github.com/Mushfiqul-Alam-17/prometheus-ebm-sdk}
+}
+```
