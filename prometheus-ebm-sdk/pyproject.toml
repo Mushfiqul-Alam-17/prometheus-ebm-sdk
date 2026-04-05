@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prometheus-ebm"
-version = "0.4.2"
+version = "0.4.3"
 description = "PROMETHEUS-EBM: Benchmarking Epistemic Metacognition in AI Models"
 readme = "README.md"
 license = {text = "MIT"}
