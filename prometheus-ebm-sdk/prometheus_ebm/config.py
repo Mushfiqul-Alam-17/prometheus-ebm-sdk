@@ -83,7 +83,7 @@ class RunConfig:
     independent_judge_sample_max: int = 60
     judge_sensitivity_max_disagreement: float = 0.25
 
-    multistage_sample_n: int = 10
+    multistage_sample_n: int = 20
     multistage_model_strategy: Literal["top_bottom", "all", "single_model"] = "top_bottom"
     multistage_max_models: int = 5
 
@@ -134,7 +134,7 @@ class RunConfig:
                 "stress_decision_ratio": 0.30,
                 "stress_clarity_ratio": 0.15,
                 "model_timeout_seconds": 36000,
-                "multistage_sample_n": 10,
+                "multistage_sample_n": 20,
                 "multistage_model_strategy": "single_model",
                 "multistage_max_models": 1,
                 "model_call_retries": 1,
@@ -152,7 +152,7 @@ class RunConfig:
             "stress_decision_ratio": 0.25,
             "stress_clarity_ratio": 0.10,
             "model_timeout_seconds": 10800,
-            "multistage_sample_n": 10,
+            "multistage_sample_n": 20,
             "multistage_model_strategy": "top_bottom",
             "multistage_max_models": 5,
             "model_call_retries": 1,

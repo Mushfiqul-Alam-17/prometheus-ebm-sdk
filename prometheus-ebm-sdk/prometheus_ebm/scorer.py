@@ -33,6 +33,8 @@ class ScoringResult:
     hit_rate: float
     false_alarm_rate: float
     overconfidence_gap: float
+    metacog_readiness_score: float
+    metacog_readiness_tier: str
 
 
 class ECIScorer:
@@ -174,6 +176,54 @@ class ECIScorer:
             self.WEIGHTS['ece'] * (1.0 - ece) +
             self.WEIGHTS['hss'] * (1.0 - hss)
         )
+
+
+class ReadinessScorer:
+    """
+    Evaluates the overall Metacognitive Readiness of the model.
+
+    Aggregates:
+      0.35 * ECI
+      0.20 * Probe Accuracy (Conditional Accuracy)
+      0.15 * (1.0 - HGI_normalized)
+      0.15 * (1.0 - ECE)
+      0.15 * Refusal Precision
+    
+    Assigns tiers:
+      >= 0.75: frontier_metacognitive_reliability
+      >= 0.60: strong_metacognitive_reliability
+      < 0.60: exploratory
+    """
+    
+    @staticmethod
+    def compute(eci: float, probe_accuracy: float, hgi: float, 
+                ece: float, rp: float, hgi_min: float = 0.0, 
+                hgi_max: float = 0.5) -> Tuple[float, str]:
+        
+        # Normalize HGI (lower HGI is better, so 1 - norm(HGI) rewards low HGI)
+        if abs(hgi_max - hgi_min) > 1e-9:
+            hgi_norm = (hgi - hgi_min) / (hgi_max - hgi_min)
+            hgi_norm = max(0.0, min(1.0, hgi_norm))
+        else:
+            hgi_norm = 0.0
+
+        readiness_raw = (
+            0.35 * eci +
+            0.20 * probe_accuracy +
+            0.15 * (1.0 - hgi_norm) +
+            0.15 * (1.0 - ece) +
+            0.15 * rp
+        )
+        score = max(0.0, min(1.0, readiness_raw))
+        
+        if score >= 0.75:
+            tier = 'frontier_metacognitive_reliability'
+        elif score >= 0.60:
+            tier = 'strong_metacognitive_reliability'
+        else:
+            tier = 'exploratory'
+            
+        return round(score, 4), tier
 
 
 class BrierDecomposition:

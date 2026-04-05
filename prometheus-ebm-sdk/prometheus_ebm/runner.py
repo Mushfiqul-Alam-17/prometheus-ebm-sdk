@@ -25,7 +25,7 @@ from .research_grade import (
     write_judge_sensitivity_artifacts,
     write_master_bundle,
 )
-from .scorer import BrierDecomposition, ECIScorer, ScoringResult, Type2DPrime
+from .scorer import BrierDecomposition, ECIScorer, ScoringResult, Type2DPrime, ReadinessScorer
 
 
 class PrometheusRunner:
@@ -222,15 +222,17 @@ class PrometheusRunner:
                 return str(providers.prompt(model, system_prompt, user_prompt) or "")
             except Exception as exc:
                 last_exc = exc
+                import time
+                time.sleep(5)  # Backoff to avoid cascading rate limit failure
                 if self.config.verbose:
                     print(f"Warning: prompt failure for {model} (attempt {attempt + 1}/{max_retries + 1}): {exc}")
 
         if allow_fallback:
             return (
-                "FINAL_ANSWER: REFUSAL\n"
-                "SOLVABILITY_CLASS: Insufficient\n"
+                "FINAL_ANSWER: EVALUATION_ERROR\n"
+                "SOLVABILITY_CLASS: Evaluation_Error\n"
                 "CONFIDENCE: 0\n"
-                "JUSTIFICATION_TYPE: Refusal\n"
+                "JUSTIFICATION_TYPE: Error\n"
                 "REASONING: Provider error after retry budget exhausted."
             )
 
@@ -264,6 +266,8 @@ class PrometheusRunner:
                 solvability = "Contradictory"
             elif "determin" in s:
                 solvability = "Determinate"
+            elif "fail" in s or "error" in s:
+                solvability = "Evaluation_Error"
 
         confidence = 0.5
         if conf_raw:
@@ -752,13 +756,19 @@ class PrometheusRunner:
                 group["solv_ok"].tolist()
             )
 
+            from .scorer import ReadinessScorer
             confs = group["confidence"].tolist()
             corrects = group["is_correct"].tolist()
             brier_dict = BrierDecomposition.compute(confs, corrects)
             dprime_dict = Type2DPrime.compute(confs, corrects)
 
+            mean_correctness = sum(corrects) / n if n else 0.0
+            mean_confidence = sum(confs) / n if n else 0.0
+            over_gap = mean_confidence - mean_correctness
 
-            overconf = sum(1 for _, r in group.iterrows() if not r["is_correct"] and r["confidence"] > 0.8)
+            readiness_score, readiness_tier = ReadinessScorer.compute(
+                eci=eci, probe_accuracy=ca, hgi=hgi, ece=ece, rp=rp
+            )
 
             results[model] = ScoringResult(
                 model=model,
@@ -777,11 +787,13 @@ class PrometheusRunner:
                 d_prime=dprime_dict.get("d_prime", 0.0),
                 hit_rate=dprime_dict.get("hit_rate", 0.0),
                 false_alarm_rate=dprime_dict.get("false_alarm_rate", 0.0),
-                overconfidence_gap=overconf / n if n else 0.0,
+                overconfidence_gap=over_gap,
+                metacog_readiness_score=readiness_score,
+                metacog_readiness_tier=readiness_tier,
             )
 
             if self.config.verbose:
-                print(f"Model: {model} | ECI: {eci:.4f} | D-Prime: {dprime_dict.get('d_prime', 0.0):.2f}")
+                print(f"Model: {model} | ECI: {eci:.4f} | D-Prime: {dprime_dict.get('d_prime', 0.0):.2f} | Tier: {readiness_tier}")
 
         return results
 
@@ -991,6 +1003,8 @@ class BenchmarkResults:
                     "overconfidence_gap": float(res.overconfidence_gap),
                     "brier_score": float(res.brier_score),
                     "d_prime": float(res.d_prime),
+                    "metacog_readiness_score": float(res.metacog_readiness_score),
+                    "metacog_readiness_tier": str(res.metacog_readiness_tier),
                 }
             )
 
@@ -1314,6 +1328,16 @@ class BenchmarkResults:
                 }
                 with open(os.path.join(temp_dir, "research_grade_status.json"), "w", encoding="utf-8") as f:
                     json.dump(self._rg_status, f, indent=2)
+
+            # Generate Visualizations
+            try:
+                from .visualizations import plot_edki_scatter, plot_epistemic_radar, plot_reliability_diagram
+                plot_edki_scatter(item_df, os.path.join(temp_dir, "edki_scatter.png"))
+                plot_epistemic_radar(summary_df, os.path.join(temp_dir, "epistemic_radar.png"))
+                plot_reliability_diagram(item_df, os.path.join(temp_dir, "reliability_diagram.png"))
+            except Exception as e:
+                if self.config.verbose:
+                    print(f"Warning: Visualization generation skipped or failed: {e}")
 
             # Notebook-style master zip produced inside output folder as well.
             write_master_bundle(temp_dir, self.config.master_bundle_name)

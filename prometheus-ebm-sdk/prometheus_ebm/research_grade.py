@@ -1613,6 +1613,9 @@ def write_master_bundle(output_dir: str, master_bundle_name: str) -> str:
         "benchmark_card_research_grade_v1.md",
         "prometheus_results_export.zip",
         "prometheus_epoch2_export.zip",
+        "epistemic_radar.png",
+        "reliability_diagram.png",
+        "edki_scatter.png",
     ]
 
     found = [f for f in all_files if os.path.exists(os.path.join(output_dir, f))]

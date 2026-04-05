@@ -35,7 +35,7 @@ def _make_dataset(path: Path, n_items: int = 10) -> None:
 
 def test_run_all_alias_and_export_zip_shorthand(tmp_path: Path):
     dataset_path = tmp_path / "dataset.json"
-    _make_dataset(dataset_path, n_items=10)
+    _make_dataset(dataset_path, n_items=30)
 
     config = RunConfig(
         mode="deep_probe",
@@ -43,7 +43,7 @@ def test_run_all_alias_and_export_zip_shorthand(tmp_path: Path):
         provider="openai",
         api_key="dummy-key",
         api_base_url="https://api.groq.com/openai/v1",
-        n_items=10,
+        n_items=30,
         dataset_path=str(dataset_path),
         run_probes=False,
         run_multistage=False,
@@ -64,7 +64,7 @@ def test_run_all_alias_and_export_zip_shorthand(tmp_path: Path):
 
 def test_multistage_is_separate_from_epoch1_scoring(tmp_path: Path):
     dataset_path = tmp_path / "dataset.json"
-    _make_dataset(dataset_path, n_items=10)
+    _make_dataset(dataset_path, n_items=30)
 
     config = RunConfig(
         mode="deep_probe",
@@ -72,7 +72,7 @@ def test_multistage_is_separate_from_epoch1_scoring(tmp_path: Path):
         provider="openai",
         api_key="dummy-key",
         api_base_url="https://api.groq.com/openai/v1",
-        n_items=10,
+        n_items=30,
         dataset_path=str(dataset_path),
         stress_decision_ratio=0.0,
         stress_clarity_ratio=0.0,
@@ -86,7 +86,7 @@ def test_multistage_is_separate_from_epoch1_scoring(tmp_path: Path):
     runner = PrometheusRunner(config=config, provider=_FakeProvider())
     results = runner.run()
 
-    assert len(results.raw_dataframe) == 10
+    assert len(results.raw_dataframe) == 30
     assert "stage_a" not in results.raw_dataframe.columns
     assert len(results.multistage_dataframe) == config.multistage_sample_n
     assert "stage_a" in results.multistage_dataframe.columns
